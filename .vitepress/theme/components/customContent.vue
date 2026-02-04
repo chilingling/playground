@@ -52,6 +52,7 @@
           title="Example Website"
           loading="lazy"
           sandbox="allow-same-origin allow-scripts"
+          allow="clipboard-write"
           onload="this.previousElementSibling.previousElementSibling.checked = false"
         ></iframe>
       </label>
@@ -159,8 +160,30 @@
   </div>
 </template>
 <script setup lang="ts">
-import { reactive, ref, watch ,onMounted } from "vue";
-import { useRoute ,useData } from "vitepress";
+import { reactive, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { useRoute, useData } from "vitepress";
+
+// Allowed origins for postMessage: playground domains + localhost (any port)
+const ALLOWED_ORIGINS = [
+  "https://opentiny.design",
+  "https://res-static.opentiny.design",
+  "https://ai.opentiny.design",
+];
+
+/** Check if origin is allowed (listed domains or localhost/127.0.0.1 any port) */
+function isOriginAllowed(origin: string): boolean {
+  if (!origin) return false;
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1") return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // 获取 VitePress 数据
 const { site, isDark } = useData();
 const route = useRoute();
@@ -250,8 +273,8 @@ watch(
     } else if (route.path.includes("/tiny-engine")) {
       linkUrl.value = "https://opentiny.design/tiny-engine#/tiny-engine-editor";
       title = "TinyEngine";
-    }else if (route.path.includes("/tiny-robot")) {
-      linkUrl.value = "https://res-static.opentiny.design/tiny-robot-playground/latest/index.html";
+    } else if (route.path.includes("/tiny-robot")) {
+      linkUrl.value = `https://res-static.opentiny.design/tiny-robot-playground/latest/index.html${window.location.hash || ""}`;
       title = "TinyRobot";
     } else if (route.path.includes("/next-sdk")) {
       linkUrl.value = "https://ai.opentiny.design/next-sdk-playground";
@@ -263,6 +286,29 @@ watch(
   },
   { deep: true, immediate: true }
 );
+
+// --- postMessage: iframe -> parent ---
+
+function handleMessage(event: MessageEvent) {
+  if (!isOriginAllowed(event.origin)) return;
+  const data = event.data;
+  if (data?.type === "playground-hash-change" && data.hash != null) {
+    const hash = String(data.hash).startsWith("#") ? data.hash : `#${data.hash}`;
+    const url =
+      window.location.pathname +
+      window.location.search +
+      hash;
+    history.replaceState(null, "", url);
+  }
+}
+
+onMounted(() => {
+  window.addEventListener("message", handleMessage);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener("message", handleMessage);
+});
 </script>
 
 <style>
